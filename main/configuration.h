@@ -25,7 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include <Arduino.h>
-#include <lmic.h>
+#include <basicmac.h>
 void ttn_register(void (*callback)(uint8_t message));
 
 // -----------------------------------------------------------------------------
@@ -40,8 +40,8 @@ void ttn_register(void (*callback)(uint8_t message));
 // -----------------------------------------------------------------------------
 
 // Select which T-Beam board is being used. Only uncomment one.
-#define T_BEAM_V07  // AKA Rev0 (first board released)
-// #define T_BEAM_V10  // AKA Rev1 (second board released)
+// #define T_BEAM_V07  // AKA Rev0 (first board released)
+#define T_BEAM_V10  // AKA Rev1 (second board released)
 
 // Select the payload format. Change on TTN as well. Only uncomment one.
 #define PAYLOAD_USE_FULL
@@ -60,6 +60,8 @@ void ttn_register(void (*callback)(uint8_t message));
 // uncomment the next option and experiment with values (~ 1 - 5)
 //#define CLOCK_ERROR             5
 
+const uint8_t EU_DR_SF12 = 0, EU_DR_SF9 = 3, EU_DR_SF7 = 5, EU_DR_SF7_BW250 = 6;
+
 #define DEBUG_PORT              Serial          // Serial debug port
 #define SERIAL_BAUD             115200          // Serial debug baud rate
 #define SLEEP_BETWEEN_MESSAGES  false           // Do sleep between messages
@@ -68,7 +70,7 @@ void ttn_register(void (*callback)(uint8_t message));
 #define LOGO_DELAY              5000            // Time to show logo on first boot
 #define LORAWAN_PORT            10              // Port the messages will be sent to
 #define LORAWAN_CONFIRMED_EVERY 0               // Send confirmed message every these many messages (0 means never)
-#define LORAWAN_SF              DR_SF10         // Spreading factor (recommended DR_SF7 for ttn network map purposes, DR_SF10 works for slow moving trackers)
+#define LORAWAN_SF              EU_DR_SF7      // Spreading factor (recommended DR_SF7 for ttn network map purposes, DR_SF10 works for slow moving trackers)
 #define LORAWAN_ADR             0               // Enable ADR
 #define REQUIRE_RADIO           true            // If true, we will fail to start if the radio is not found
 

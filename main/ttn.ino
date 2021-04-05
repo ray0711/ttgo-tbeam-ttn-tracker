@@ -36,11 +36,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // -----------------------------------------------------------------------------
 
 // LMIC GPIO configuration
+// following https://github.com/LacunaSpace/basicmac/blob/32933affa6cff00cf61ca8ed2898f04c2048b832/target/arduino/examples-common-files/standard-pinmaps.ino#L134
 const lmic_pinmap lmic_pins = {
-    .nss = NSS_GPIO,
-    .rxtx = LMIC_UNUSED_PIN,
-    .rst = RESET_GPIO,
-    .dio = {DIO0_GPIO, DIO1_GPIO, DIO2_GPIO},
+    .nss = LORA_CS, // 18
+    // TXEN is controlled through DIO2 by the SX1262 (HPD16A) directly
+    .tx = LMIC_CONTROLLED_BY_DIO2,
+    .rx = LMIC_UNUSED_PIN,
+    .rst = LORA_RST, // 23
+    .dio = {LMIC_UNUSED_PIN, LORA_IO1  /* 33 */, LMIC_UNUSED_PIN},
+    .busy = LORA_IO2, // 32
+    // TCXO is controlled through DIO3 by the SX1262 directly
+    .tcxo = LMIC_CONTROLLED_BY_DIO3,
 };
 
 
@@ -63,6 +69,14 @@ void os_getDevKey (u1_t* buf) { memcpy_P(buf, APPKEY, 16); }
 #endif
 
 std::vector<void(*)(uint8_t message)> _lmic_callbacks;
+
+
+// These callbacks are only used in over-the-air activation, so they are
+// left empty here (we cannot leave them out completely unless
+// DISABLE_JOIN is set in config.h, otherwise the linker will complain).
+void os_getJoinEui (u1_t* buf) { }
+void os_getNwkKey (u1_t* buf) { }
+u1_t os_getRegion (void) { return REGCODE_EU868; }
 
 // -----------------------------------------------------------------------------
 // Private methods
@@ -137,7 +151,7 @@ void initDevEUI() {
 #endif
 
 // LMIC library will call this method when an event is fired
-void onEvent(ev_t event) {
+void onLmicEvent(ev_t event) {
     switch(event) {
     case EV_JOINED: {
         #ifdef SINGLE_CHANNEL_GATEWAY
@@ -157,7 +171,7 @@ void onEvent(ev_t event) {
         devaddr_t devaddr = 0;
         u1_t nwkKey[16];
         u1_t artKey[16];
-        LMIC_getSessionKeys(&netid, &devaddr, nwkKey, artKey);
+        LMIC_setSession (netid, DEVADDR, NWKSKEY, APPSKEY);        
         Serial.print("netid: ");
         Serial.println(netid, DEC);
         Serial.print("devaddr: ");
@@ -186,7 +200,7 @@ void onEvent(ev_t event) {
             p.end();
         }
         break; }
-    case EV_TXCOMPLETE:
+    case EV_TXCOMPLETE:        
         Serial.println(F("EV_TXCOMPLETE (inc. RX win. wait)"));
         if (LMIC.txrxFlags & TXRX_ACK) {
             Serial.println(F("Received ack"));
@@ -248,7 +262,11 @@ bool ttn_setup() {
     SPI.begin(SCK_GPIO, MISO_GPIO, MOSI_GPIO, NSS_GPIO);
 
     // LMIC init
-    return ( 1 == os_init_ex( (const void *) &lmic_pins ) );
+    os_init(nullptr);
+    // Reset the MAC state. Session and pending data transfers will be discarded.
+    LMIC_reset();
+    // TODO: change signature or check for state?
+    return true;
 }
 
 void ttn_join() {
@@ -259,27 +277,27 @@ void ttn_join() {
     LMIC_setClockError(MAX_CLOCK_ERROR * CLOCK_ERROR / 100);
     #endif
 
-        #if defined(CFG_eu868)
+#if defined(CFG_eu868)
 
-            // Set up the channels used by the Things Network, which corresponds
-            // to the defaults of most gateways. Without this, only three base
-            // channels from the LoRaWAN specification are used, which certainly
-            // works, so it is good for debugging, but can overload those
-            // frequencies, so be sure to configure the full frequency range of
-            // your network here (unless your network autoconfigures them).
-            // Setting up channels should happen after LMIC_setSession, as that
-            // configures the minimal channel set.
-            LMIC_setupChannel(0, 868100000, DR_RANGE_MAP(DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-            LMIC_setupChannel(1, 868300000, DR_RANGE_MAP(DR_SF12, DR_SF7B), BAND_CENTI);      // g-band
-            LMIC_setupChannel(2, 868500000, DR_RANGE_MAP(DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-            LMIC_setupChannel(3, 867100000, DR_RANGE_MAP(DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-            LMIC_setupChannel(4, 867300000, DR_RANGE_MAP(DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-            LMIC_setupChannel(5, 867500000, DR_RANGE_MAP(DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-            LMIC_setupChannel(6, 867700000, DR_RANGE_MAP(DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-            LMIC_setupChannel(7, 867900000, DR_RANGE_MAP(DR_SF12, DR_SF7),  BAND_CENTI);      // g-band
-            LMIC_setupChannel(8, 868800000, DR_RANGE_MAP(DR_FSK,  DR_FSK),  BAND_MILLI);      // g2-band
+    // Set up the channels used by the Things Network, which corresponds
+    // to the defaults of most gateways. Without this, only three base
+    // channels from the LoRaWAN specification are used, which certainly
+    // works, so it is good for debugging, but can overload those
+    // frequencies, so be sure to configure the full frequency range of
+    // your network here (unless your network autoconfigures them).
+    // Setting up channels should happen after LMIC_setSession, as that
+    // configures the minimal channel set.
+    LMIC_setupChannel(0, 868100000, DR_RANGE_MAP(EU_DR_SF12, EU_DR_SF7));       // g-band
+    LMIC_setupChannel(1, 868300000, DR_RANGE_MAP(EU_DR_SF12, EU_DR_SF7_BW250)); // g-band
+    LMIC_setupChannel(2, 868500000, DR_RANGE_MAP(EU_DR_SF12, EU_DR_SF7));       // g-band
+    LMIC_setupChannel(3, 867100000, DR_RANGE_MAP(EU_DR_SF12, EU_DR_SF7));       // g-band
+    LMIC_setupChannel(4, 867300000, DR_RANGE_MAP(EU_DR_SF12, EU_DR_SF7));       // g-band
+    LMIC_setupChannel(5, 867500000, DR_RANGE_MAP(EU_DR_SF12, EU_DR_SF7));       // g-band
+    LMIC_setupChannel(6, 867700000, DR_RANGE_MAP(EU_DR_SF12, EU_DR_SF7));       // g-band
+    LMIC_setupChannel(7, 867900000, DR_RANGE_MAP(EU_DR_SF12, EU_DR_SF7));       // g-band
+    LMIC_setupChannel(8, 868800000, DR_RANGE_MAP(FSK, FSK));                    // g2-band
 
-        #elif defined(CFG_us915)
+#elif defined(CFG_us915)
 
             // NA-US channels 0-71 are configured automatically
             // but only one group of 8 should (a subband) should be active
@@ -310,8 +328,8 @@ void ttn_join() {
         #ifdef SINGLE_CHANNEL_GATEWAY
         forceTxSingleChannelDr();
         #else
-        // Set default rate and transmit power for uplink (note: txpow seems to be ignored by the library)
-        ttn_sf(LORAWAN_SF);
+        // Set default rate and transmit power for uplink (note: txpow seems to be ignored by the library)        
+        ttn_sf(LORAWAN_SF);        
         #endif
 
     #if defined(USE_ABP)
@@ -325,7 +343,8 @@ void ttn_join() {
         LMIC_setSession(0x1, DEVADDR, nwkskey, appskey);
 
         // TTN uses SF9 for its RX2 window.
-        LMIC.dn2Dr = DR_SF9;
+        LMIC.dn2Dr = EU_DR_SF9;
+        
 
         // Trigger a false joined
         _ttn_callback(EV_JOINED);
@@ -369,8 +388,8 @@ void ttn_join() {
     #endif
 }
 
-void ttn_sf(unsigned char sf) {
-    LMIC_setDrTxpow(sf, 14);
+void ttn_sf(unsigned char sf) {    
+    LMIC_setDrTxpow(sf, KEEP_TXPOWADJ);
 }
 
 void ttn_adr(bool enabled) {
@@ -382,7 +401,8 @@ uint32_t ttn_get_count() {
   return count;
 }
 
-static void ttn_set_cnt() {
+// TODO: get access to the counter
+/* static void ttn_set_cnt() {
     LMIC_setSeqnoUp(count);
 
     // We occasionally mirror our count to flash, to ensure that if we lose power we will at least start with a count that is almost correct 
@@ -399,7 +419,7 @@ static void ttn_set_cnt() {
             p.end();
         }
     }
-}
+} */
 
 /// Blow away our prefs (i.e. to rejoin from scratch)
 void ttn_erase_prefs() {
@@ -411,7 +431,7 @@ void ttn_erase_prefs() {
 }
 
 void ttn_send(uint8_t * data, uint8_t data_size, uint8_t port, bool confirmed){
-    ttn_set_cnt(); // we are about to send using the current packet count
+    // ttn_set_cnt(); // we are about to send using the current packet count
 
     // Check if there is not a current TX/RX job running
     if (LMIC.opmode & OP_TXRXPEND) {
@@ -428,5 +448,5 @@ void ttn_send(uint8_t * data, uint8_t data_size, uint8_t port, bool confirmed){
 }
 
 void ttn_loop() {
-    os_runloop_once();
+    os_runstep();
 }
